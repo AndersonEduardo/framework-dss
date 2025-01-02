@@ -42,6 +42,17 @@ class DecisionTree:
 
         return sorted(output)
 
+    # def eval_(self, node_name:str, x:dict):
+    #     for node_i in self.node_list:
+    #         if node_i.name.strip().lower() == node_name.strip().lower():
+    #             node_output = node_i.eval_rule(x)
+    #             if 'output' in node_output.strip().lower():
+    #                 return node_output
+    #             else:
+    #                 return self.eval_(node_output, x)
+    #         else:
+    #             pass
+
 
     def eval_(self, node_name:str, x:dict, **kwargs):
 

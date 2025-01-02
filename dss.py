@@ -4,8 +4,10 @@ import pickle
 import datetime as dt
 from dotenv import load_dotenv
 import pandas as pd
+# from datetime import datetime
 from decisiontree import *
 from parameters import *
+from awss3 import AwsS3 as aws
 
 load_dotenv()
 
@@ -15,9 +17,30 @@ class DecisionSupportSystem:
     def __init__(self):
 
         self.decision_tree_list = list()
-        self.__filename_backup = PERSISTENCE_BACKUP_FILEPATH
-        self.__default_context = DEFAULT_CONTEXT
-        self.__filename = PERSISTENCE_FILEPATH
+        self.__bucket = self.__set_bucket()
+        self.__filename = self.__set_filename()
+        self.__filename_backup = self.__set_filename_backup()
+        self.__default_context = self.__set_default_context()
+
+
+    def __set_filename(self):
+
+        return  PERSISTENCE_FILEPATH
+
+
+    def __set_filename_backup(self):
+
+        return PERSISTENCE_BACKUP_FILEPATH
+
+
+    def __set_bucket(self):
+        
+        return S3_BUCKET
+
+
+    def __set_default_context(self):
+
+        return DEFAULT_CONTEXT
 
 
     def __check_existence(self, tree_name:str, node_name:str = None, context:str = None):
@@ -220,7 +243,8 @@ class DecisionSupportSystem:
                     self.delete_node(
                         context = context,
                         decision_tree_name = decision_tree_name,
-                        node_name = node_name
+                        node_name = node_name,
+                        offline = offline
                     )
 
                     node_rules = self.rule_parser(context=context, user_input=node_rules, bundles=bundles)
@@ -482,24 +506,86 @@ class DecisionSupportSystem:
         raise Exception('Decision Tree or Node not found.')
 
 
+    def s3_file_exists(self):
+
+        try:
+
+            aws.load_from_s3(self.__bucket, self.__filename)
+
+            print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] ...DSS source file found and successfully loaded...')
+
+            return True
+        
+        except:
+
+            print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] WARNING! Not able to load the DSS source file.')
+
+            return False
+
+
+    def s3_backup_exists(self):
+
+        try:
+
+            aws.load_from_s3(self.__bucket, self.__filename_backup)
+
+            return True
+        
+        except:
+
+            return False
+
+
     def _save(self):
 
-        with open(self.__filename, 'wb') as f:
+        # TODO: ideia: salvar modificações do dia no diretório local. No
+        # fim do dia (e.g., meia noite), rodar um processo que faz o
+        # update no S3.
 
-            pickle.dump(self.decision_tree_list, f)
+        if self.s3_file_exists():
 
+            if self.s3_backup_exists():
+ 
+                aws.delete_on_s3(self.__bucket, self.__filename_backup)
+            
+            new_backup = aws.load_from_s3(self.__bucket, self.__filename)
 
-    def load_backup(self):
-
-        if os.path.exists(self.__filename):
-
-            with open(self.__filename, 'rb') as f:
-
-                self.decision_tree_list = pickle.load(f)
+            aws.save_on_s3(new_backup, self.__bucket, self.__filename_backup)
 
         else:
 
-            print('\n*No backup file found for Decision Trees.\n')
+            pass
+
+        aws.save_on_s3(obj=self.decision_tree_list, bucket=self.__bucket, file_name=self.__filename)
+
+
+    @classmethod
+    def _clean_persistence_files(cls):
+
+        cls.__clean_persistence_files_on_s3()
+
+
+    def __clean_persistence_files_on_s3(self):
+        
+        aws.delete_on_s3(self.__bucket, self.__filename)
+        aws.delete_on_s3(self.__bucket, self.__filename_backup)
+
+
+    def load_backup_from_s3(self):
+
+        # a arvore mais atual está no __file_name. A __filename_backup é
+        # a "penultima", ou seja, é um backup de emergencia, de fato.
+        if self.s3_file_exists():
+
+            trees_from_backup = aws.load_from_s3(self.__bucket, self.__filename)
+
+            self.decision_tree_list.extend(trees_from_backup)
+
+        else:
+
+            # print('\n load_backup_from_s3: RETORNANDO O SELF')
+
+            return None
 
 
     def _build_tree_from_excel(self, context:str, excel_filepath:str = None, **kwargs):
@@ -638,7 +724,7 @@ class DecisionSupportSystem:
 
 
         ## offline ##
-        user_choice = kwargs.get('offline')
+        # user_choice = kwargs.get('offline')
 
 
         ## force the overwriting of a tree (with the same name) ##
@@ -652,24 +738,49 @@ class DecisionSupportSystem:
             context = context,
             name = decision_tree_name,
             target_field = target,
-            offline = user_choice,
+            offline = True, #user_choice,  # deixando True pois tudo será atualizado no S3 no _save mais abaixo.
             force = force
         )
 
+        new_decision_tree = [
+            decision_tree 
+            for decision_tree in self.decision_tree_list
+            if (decision_tree['context'] == context) and (decision_tree['tree'].name == decision_tree_name)
+        ][0]
 
         ## add the rules ##
         for (node, rule,  output_true, output_false) in zip(nodes, rules, outputs_true, outputs_false):
 
+            node_name = node.strip().lower()
             node_rules = f'{rule}; {output_true}; {output_false}'
+            context = self.__default_context if context is None else context.strip().lower()
 
-            self.add_tree_node(
-                context = context,
-                decision_tree_name = decision_tree_name,
-                node_name = node,
-                node_rules = node_rules,
-                bundles = bundles,
-                offline = user_choice,
-                force = force
-            )
+            pre_existence_check = self.__check_existence(
+                    context = context,
+                    tree_name = decision_tree_name, 
+                    node_name = node_name
+                )
+
+            if pre_existence_check is True and force is False:
+
+                raise Exception(f'A Node named {node_name} already exists for the Tree \
+                                {decision_tree_name} (context {context}) (in order to \
+                                force the creation, consider the parameter force=True).')
+
+            else:
+
+                node_rules = self.rule_parser(context=context, user_input=node_rules, bundles=bundles)
+                node_new = Node(node_name, node_rules)
+
+                new_decision_tree['tree'].add(node_new)
+
+
+        if len(new_decision_tree['tree'].node_list) > 0:
 
             self.rooting(context = context, decision_tree_name = decision_tree_name)
+
+            self._save()
+
+        else:
+
+            raise Exception(f'Tree {decision_tree_name} (context {context}) have no nodes.')

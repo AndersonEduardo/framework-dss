@@ -1,476 +1,289 @@
-import os
-import pickle
-import time
-import datetime as dt
-import dotenv
+import requests
+import streamlit as st
+from streamlit_agraph import agraph, Node, Edge, Config
+from streamlit_tree_select import tree_select
 
-from flask import Flask, jsonify, request, make_response, render_template
-from flask_cors import CORS
-
-from dss import *
-from decisiontree import *
-from node import *
-from bundles import *
+# from dssf.parameters import *
+from parameters import *
+from utils import *
+from dataloader import DataLoader as dataloader
 
 
-app = Flask(__name__)
-CORS(app)
-app.config['JSON_AS_ASCII'] = False
+bundles_data_formated = dataloader.load_data()
 
 
-print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Building Decision Support System...")
+st.title("Decision Trees")
 
-bds = Bundles()
-bds.load_backup()
+# Armazenar os valores
+if 'number_of_lines' not in st.session_state:
 
-dss = DecisionSupportSystem()
-dss.load_backup()
-
-print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ...done.")
+    st.session_state['number_of_lines'] = 1
 
 
-@app.route('/')
-def home():
+input_data = list()
 
-    return jsonify('## DSSF: DECISION SUPPORT SYSTEM FRAMEWORK - COCKPIT - DIGITAL PLATFORM/SBIBAE ##')
+if 'session_input_data' not in st.session_state:
 
-
-@app.route('/update-tree-node', methods=['GET', 'POST'])
-def update_tree_node():
-
-    if request.is_json:
-
-        data = request.json
-        context = data.get('context')
-        decision_tree_name = data.get('decision-tree-name')
-        focal_node_name = data.get('focal-node-name')
-        new_rule = data.get('rule')
-        if_true = data.get('if-true')
-        if_false = data.get('if-false')
-        offline = data.get('offline')
-
-        new_node_rule = f'{new_rule}; {if_true}; {if_false}'
-        context = None if context is None else(None if context.strip().lower() == 'none' else context)
-        offline = False if offline is None else(False if offline.strip().lower() == 'none' else (True if offline.strip().lower() == 'true' else False))
-
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ## Update for a tree Node ##")
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] User inputs:")
-        print('\t-context:', context)
-        print('\t-decision_tree_name:', decision_tree_name)
-        print('\t-focal_node_name:', focal_node_name)
-        print('\t-new_node_rule:', new_node_rule)
+    st.session_state['session_input_data'] = list() #input_data
 
 
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Updating {focal_node_name} node...")
-        update_output = dss.update_rule(
-            context = context,
-            decision_tree_name = decision_tree_name,
-            node_name = focal_node_name,
-            new_rule = new_node_rule,
-            bundles = bds,
-            offline = offline
-        )
 
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ...done.")
+col = st.columns([1, 1])
 
-        if update_output is None:
+with col[0]:
 
-            response = {"message": "Done."}
-            response = make_response(response)
-            response.status = 200
+    context_name = st.text_input("Context name:", value='sandbox', key="context")
+
+with col[1]:
+
+    tree_name = st.text_input("Decision tree name:", value=None, key="decision_tree")
+
+input_data.append({'context': context_name, 'tree_name': tree_name})
+
+
+counter = 0
+
+while counter < st.session_state['number_of_lines']: 
+
+    st.write(f'**Decision node {counter+1}:**')
+
+    with st.container():
+
+        col1, _ = st.columns(2)
+
+        with col1:
         
-        else:
+            node_name = st.text_input('Node name:', value=None, key=f"node_name_{counter}")
 
-            response = {"message": "Decision tree name or node name not found."}
-            response = make_response(response)
-            response.status = 422
-
-        return response
-
-    else:
-
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] - ouptut: Content type not supported ('application/json' needed, but {request.headers.get('Content-Type')} was found).")
-
-        response = {"status": 415, "message": "Content type not supported."}
-        response = make_response(response)
-        response.status = 415
-
-        return response
-
-
-@app.route('/query', methods=['GET', 'POST'])
-def query():
-
-    if request.is_json:
-
-        data = request.json
-        decision_tree_name = data.get('decision_tree_name')
-        user_input = data.get('parameters')
-        context = data.get('context')
-
-        context = None if context is None else(None if context.strip().lower() == 'none' else context)
-
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ## Decision Tree Query ##")
-        print(
-            f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] User input: \n\t-context={context} \n\t-decision_tree_name={decision_tree_name} {type(decision_tree_name)}\n\t-parameters={user_input} {type(user_input)}"
-        )
-
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Querying Decision Tree...")
-        response = dss.query(
-            context = context,
-            decision_tree_name = decision_tree_name, 
-            user_input = user_input
-        )
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Response:", response)
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ...done.")
-
-        response = {"message": "Done.", "response": response}
-        response = make_response(response)
-        response.status = 200
-
-        return response
-
-    else:
-
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] - ouptut: Content type not supported ('application/json' needed, but {request.headers.get('Content-Type')} was found).")
-
-        response = {"status": 415, "message": "Content type not supported."}
-        response = make_response(response)
-        response.status = 415
-
-        return response
-
-
-@app.route('/delete-tree', methods=['DELETE',])
-def delete_tree():
-
-    if request.is_json:
-
-        data = request.json
-        decision_tree_name = data.get('decision-tree-name')
-        context = data.get('context')
-        offline = data.get('offline')
-
-        context = None if context is None else(None if context.strip().lower() == 'none' else context)
-        offline = False if offline is None else(False if offline.strip().lower() == 'none' else (True if offline.strip().lower() == 'true' else False))
-
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] ## Decision Tree Deleting ##')
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  User inputs: \n\t-context: {context} \n\t-decision_tree_name: {decision_tree_name}')
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  Deleting the Decision Tree {decision_tree_name} (context "{context}")...')
-        dss.delete_tree(
-            context = context,
-            decision_tree_name = decision_tree_name,
-            offline = offline
-        )
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ...done.')
-
-        response = {"message": "Done."}
-        response = make_response(response)
-        response.status = 200
-
-        return response
-
-    else:
-
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  - ouptut: Content type not supported ("application/json" needed, but {request.headers.get("Content-Type")} was found).')
-
-        response = {"status": 415, "message": "Content type not supported."}
-        response = make_response(response)
-        response.status = 415
-
-        return response
-
-
-@app.route('/list-trees')
-def list_trees():
-
-    context = request.args.get('context', type=str, default=None)
-
-    context = None if context is None else(None if context.strip().lower() == 'none' else context)
-
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ## Decision Tree Listing ##')
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  Decision trees in the system (context = {context}):')
-    response = dss.get_tree_list(
-        context = context
-    )
-    print(response)
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] ...done.')
-
-    response = {"message": "Done.", "response": response}
-    response = make_response(response)
-    response.status = 200
-
-    return response
-
-
-@app.route('/list-tree-nodes')
-def list_tree_nodes():
-
-    decision_tree_name = request.args.get('decision-tree-name', type=str, default=None)
-    context = request.args.get('context', type=str, default=None)
-
-    context = None if context is None else(None if context.strip().lower() == 'none' else context)
-
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ## Node Listing ##')
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  User inputs: \n\t-context: {context}\n\t-decision_tree_name: {decision_tree_name}')
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  List of Nodes for the Decision Tree {decision_tree_name}:')
-    response = dss.get_node_list(
-        context = context,
-        decision_tree_name = decision_tree_name
-    )
-    print(response)
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ...done.')
-
-    response = {"message": "Done.", "response": response}
-    response = make_response(response)
-    response.status = 200
-
-    return response
-
-
-@app.route('/list-tree-rules')
-def list_tree_rules():
-
-    decision_tree_name = request.args.get('decision-tree-name', type=str, default=None)
-    context = request.args.get('context', type=str, default=None)
-
-    context = None if context is None else(None if context.strip().lower() == 'none' else context)
-
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ## Node Listing ##')
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  User inputs: \n\t-context: {context}\n\t-decision_tree_name: {decision_tree_name}')
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] List of Rules for the Decision Tree {decision_tree_name}:')
-    response = dss.get_rule_list(
-        context = context,
-        decision_tree_name = decision_tree_name
-    )
-    print(response)
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ...done.')
-
-    response = {"message": "Done.", "response": response}
-    response = make_response(response)
-    response.status = 200
-
-    return response
-
-
-@app.route('/create-bundles', methods=['GET', 'POST'])
-def create_bundles():
-
-    if request.is_json:
-
-        data = request.json
-        context = str(data.get('context')).strip().lower()
-        bundle_name = str(data.get('bundle-name')).strip().lower()
-        bundle_values = str(data.get('bundle-values')).strip().lower()
-        offline = str(data.get('offline')).strip().lower()
-
-        context = None if context is None else(None if context == 'none' else context)
-        offline = None if offline is None else(None if offline == 'none' else offline)
-
-
-        if offline not in [None, 'true', 'false']:
-
-            raise TypeError('The parameter "offline" must be either True or False.')
+        col1, col2, col3, col4 = st.columns(4)
         
-        else:
-
-            if offline == 'true':
-
-                offline = True
-            
-            else:
-
-                offline = False
-
-
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ## Bundle ##')
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  \t-context: {context}')
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  \t-bundle name: {bundle_name}')
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  \t-bundle values: {bundle_values}')
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  \t-offline: {offline}')
+        with col1:
     
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  Running parser...')
-        parsed = bds.input_parser(bundle_name, bundle_values)
-        bds.append(context=context, bundle=parsed, offline=offline)    
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ...done.')
-
-        response = {"message": "Done."}
-        response = make_response(response)
-        response.status = 200
-
-        return response
-
-    else:
-
-        print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  - ouptut: Content type not supported ("application/json" needed, but {request.headers.get("Content-Type")} was found).')
-
-        response = {"status": 415, "message": "Content type not supported."}
-        response = make_response(response)
-        response.status = 415
-
-        return response
-
-
-@app.route('/list-bundles')
-def list_bundles():
-
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ## Bundles Listing ##')
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  Current bundles in the system:')
-    response =  bds.get_bundles_list()
-    print(response)
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] ...done.')
-
-    response = {"message": "Done.", "response": response}
-    response = make_response(response)
-    response.status = 200
-
-    return response
-
-
-@app.route('/delete-bundle', methods=['DELETE',])
-def delete_bundle():
-
-    if request.is_json:
-
-        data = request.json
-        bundle_name = str(data.get('bundle-name')).strip().lower()
-        context = str(data.get('context')).strip().lower()
-        offline = str(data.get('offline')).strip().lower()
-        all_bundles = str(data.get('all')).strip().lower()
-
-        context = None if context is None else(None if context == 'none' else context)
-        offline = None if offline is None else(None if offline == 'none' else offline)
-        all_bundles = None if all_bundles is None else(None if all_bundles == 'none' else all_bundles)
-
-
-        if offline not in [None, 'true', 'false']:
-
-            raise TypeError('The parameter "offline" must be either True or False.')
-        
-        else:
-
-            if offline == 'true':
-
-                offline = True
-            
-            else:
-
-                offline = False
-
-        if all_bundles not in [None, 'true', 'false']:
-
-            raise TypeError('The parameter "all_bundles" must be either True or False.')
-
-        else:
-
-            if all_bundles == 'true':
-
-                all_bundles = True
-            
-            else:
-
-                all_bundles = False
-
-
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ## Bundle Deleting ##")
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] User inputs:")
-        print('\tcontext:', context)
-        print('\tbundle_name:', bundle_name)
-        print('\toffline:', offline)
-        print('\tall_bundles:', all_bundles)
-
-
-        if all_bundles in [True, 'true']:
-            print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Deleting all Bundles...")            
-        else:
-            print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Deleting Bundle {bundle_name} (context {context}')...")
-
-        bds.delete(
-            context = context,
-            name = bundle_name, 
-            offline = offline,
-            all = all_bundles
-        )
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ...done.")
-
-        response = {"message": "Done."}
-        response = make_response(response)
-        response.status = 200
-
-        return response
-
-    else:
-
-        print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] - ouptut: Content type not supported ('application/json' needed, but {request.headers.get('Content-Type')} was found).")
-
-        response = {"status": 415, "message": "Content type not supported."}
-        response = make_response(response)
-        response.status = 415
-
-        return response
-
-
-@app.route('/treeuploader', methods=['GET', 'POST'])
-def uploader():
-
-    if request.method == 'POST':
-
-        bds._load_from_excel(
-            excel_filepath = request.files.get('file') # input_value
-        )
-
-        dss._build_tree_from_excel(
-            context = None,
-            excel_filepath = request.files.get('file'), # input_value,
-            bundles = bds,
-            offline = False,
-            force = False
-        )
-
-        # refreshing current system with the new data
-        # print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] Refreshing for the new data...')
-        # dss.load_backup()
-        # print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}] ...done.')
-
-        return render_template('done.html')
+            variable_name = st.text_input("Variable name:", value=None, key=f"var_{counter}")
     
-    return render_template('uploader.html')
+        with col2:
+    
+            operation = st.selectbox('Operation type:', MENU_OPERATIONS, index=None, key=f"operation_{counter}")
+    
+        with col3:
+    
+            parameter_type = st.selectbox('Parameter type:', MENU_PARAMETERS_TYPE, index=None, key=f"parameter_type_{counter}")
+
+            if str(parameter_type).strip().lower() == 'bundle':
+
+                if (f'bundle_dialog_state_{counter}' not in st.session_state) or (st.session_state[f'bundle_dialog_state_{counter}'] == 0):
+
+                    bundle_modal(row=counter)
+
+            else:
+
+                st.session_state[f'bundle_dialog_state_{counter}'] = 0
+
+        with col4:
+
+            if str(parameter_type).strip().lower() == 'bundle':
+
+                selection_indexes = st.session_state.get(f'bundle_parameter_value_{counter}')
+
+                selection_indexes = '' if selection_indexes is None else selection_indexes['checked']
+
+                selection_indexes = [x for x in selection_indexes if x.split('_')[0].strip().lower() not in ['pathway', 'section']]
+
+                parameter_value = [bundles_data_formated['index_list'].get(x) for x in selection_indexes]
+
+                if len(set(x.split('_')[0] for x in selection_indexes)) > 1:
+
+                    st.session_state[f'bundle_parameter_value_{counter}'] = None # necessário forçar None aqui, para limpar o placeholder
+                    
+                    popup('Mixing values from different categories (e.g., exams with medications) is not allowed.')
+
+                    st.session_state[f'bundle_dialog_state_{counter}'] = 0
+
+                else:
+
+                    st.session_state['warning_dialog_state'] = 0
+
+                    parameter_value = [str(x).title() for x in parameter_value]
+
+                    parameter_value = '[linebreak]'.join(parameter_value)
 
 
-@app.route('/refresh', methods=['GET'])
-def refresh():
-
-    global bds, dss
-
-    del bds, dss
-
-    dotenv.load_dotenv(override=True)
-
-    print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Refreshing Decision Support System...")
-
-    bds = Bundles()
-    bds.load_backup()
-
-    dss = DecisionSupportSystem()
-    dss.load_backup()
-
-    print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ...done.")
-
-    return jsonify({"status": 200, "message": "Decision Support System refreshing concluded."})
+                st.text_input("Parameter value:", disabled=True, value=None, 
+                              placeholder=parameter_value.replace('[linebreak]', ', '), key=f"parameter_value_{counter}")          
 
 
-@app.route('/healthcheck', methods=['GET'])
-def healthCheck():
+            else:
 
-    print(f'[API STATUS - {dt.datetime.now().strftime("%Y-%m-%d %H:%M:%s")}]  ## Health check ##')
+                parameter_value = st.text_input("Parameter value:", disabled=False, value=None, key=f"parameter_value_{counter}")
 
-    return {
-        "STATUS": 200,
-        "detailed": True,
-        "message": "Health is fine for deploy on ECS."
-    }
+                if (str(parameter_type).strip().lower() == 'number') and (parameter_value is not None):
+            
+                    parameter_value = float(parameter_value)
 
 
-if __name__ == '__main__':
+    with st.container():
 
-    app.run(host="0.0.0.0", debug=False)
+        col1, col2 = st.columns(2)
+
+        with col1:
+    
+            value_if_true = st.selectbox('If *True*:', MENU_ACTION,
+                                         index=None, key=f"se_verdadeiro_{counter}")
+            value_if_false = st.selectbox('If *False*:', MENU_ACTION,
+                                          index=None, key=f"se_falso_{counter}")
+    
+        with col2:
+
+            if value_if_true == 'Output & Go to':
+
+                place_holder_true = 'Example: Node-02 & Obesity'
+
+            else:
+
+                place_holder_true = None
+
+            if value_if_false == 'Output & Go to':
+
+                place_holder_false = 'Example: Node-02 & Obesity'
+
+            else:
+
+                place_holder_false = None
+
+            contents_if_true = st.text_input(
+                "Contents:", value=None, placeholder=place_holder_true, key=f"contents_if_true_{counter}"
+            )
+            contents_if_false = st.text_input(
+                "Contents:", value=None, placeholder=place_holder_false, key=f"contents_if_false_{counter}"
+            )
+
+            contents_if_true = None if (contents_if_true == '') or (contents_if_true == 'End') else contents_if_true
+            contents_if_false = None if (contents_if_false == '') or (contents_if_true == 'End') else contents_if_false
+
+
+    input_data.append(
+        {
+            'node_name': node_name, 'variable_name': variable_name, 
+            'operation': operation, 
+            'parameter_type': parameter_type, 'parameter_value': parameter_value,
+            'value_if_true': value_if_true, 'value_if_false': value_if_false,
+            'if_true': contents_if_true, 'if_false': contents_if_false
+        }
+    )
+    counter +=1
+
+
+col = st.columns([1, 1, 5])
+
+with col[0]:
+
+    if st.button("Add", key=f'button_add_{counter}'):
+
+        st.session_state['number_of_lines'] = st.session_state['number_of_lines'] + 1
+        st.rerun()
+
+with col[1]:
+    
+    if st.button("Reset", key=f'button_reset_{counter}'):
+    
+        del st.session_state['number_of_lines']
+        del st.session_state['session_input_data']
+        del st.session_state['context']
+        del st.session_state['decision_tree']
+        del st.session_state['var_0']
+        del st.session_state['operation_0']
+        del st.session_state['parameter_type_0']
+        del st.session_state['parameter_value_0']
+        del st.session_state['node_name_0']
+        del st.session_state['contents_if_true_0']
+        del st.session_state['contents_if_false_0']
+        del (input_data, context_name, tree_name, variable_name, operation, 
+             parameter_type, parameter_value, node_name, contents_if_true, 
+             contents_if_false)
+        st.cache_data.clear()
+        st.rerun()
+
+
+########################
+######## Graph #########
+########################
+
+# build_graph(input_data)
+
+nodes = []
+edges = []
+
+if len(input_data) > 2:
+
+    with st.container(border=True):
+    
+        for i,item in enumerate(input_data):
+        
+            if i == 0:
+        
+                pass
+        
+            else:
+        
+        
+                nodes.append(Node(id=item['node_name'], label=item['node_name']))
+    
+                edges.append(
+                    Edge(
+                        source=item['node_name'], 
+                        target=item['if_true'],
+                        type="STRAIGHT",
+                        label="Se Verdadeiro", 
+                    )
+                )
+    
+                edges.append(
+                    Edge(
+                        source=item['node_name'], 
+                        target=item['if_false'],
+                        type="STRAIGHT",
+                        label="Se Falso", 
+                    )
+                )
+        
+        
+        config = Config(
+            width=700,
+            height=300,
+            nodeHighlightBehavior=True,
+            directed=True, 
+            physics=True, 
+            hierarchical=True
+        )
+        
+        # return_value = agraph(
+        agraph(
+            nodes=nodes, 
+            edges=edges,
+            config=config
+        )
+
+########################
+########################
+########################
+
+
+########################
+###### JSON DATA #######
+########################
+
+# Exibe os valores selecionados (opcional)
+
+# st.write("Valores Selecionados:")
+# st.json(input_data)
+
+
+
+########################
+######### API ##########
+########################
+
+
+if st.button("Create decision tree", key='create_decision_tree'):
+    
+    create_tree(input_data)

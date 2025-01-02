@@ -111,6 +111,7 @@ class Node:
                         .replace('variable:' + k, str(v).strip().lower())
 
             logical_expression = rules[i][0].strip().lower().replace('  ', ' ')
+            # logical_expression = ' and '.join(['(' + x.strip() + ')' for x in logical_expression.split('and')])
             logical_expression_eval_list = list()
             logical_expression_output_for_true = rules[i][1].lower().replace('  ', ' ')
             logical_expression_output_for_false = rules[i][2].lower().replace('  ', ' ')
