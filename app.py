@@ -87,29 +87,36 @@ while counter < st.session_state['number_of_lines']:
 
                 selection_indexes = '' if selection_indexes is None else selection_indexes['checked']
 
-                selection_indexes = [x for x in selection_indexes if x.split('_')[0].strip().lower() not in ['pathway', 'section']]
+                selection_indexes_clean = [x for x in selection_indexes if x.split('_')[0].strip().lower() not in ['context', 'bundle']]
 
-                parameter_value = [bundles_data_formated['index_list'].get(x) for x in selection_indexes]
+                parameter_value = [bundles_data_formated['index_list'].get(x) for x in selection_indexes_clean]
 
-                if len(set(x.split('_')[0] for x in selection_indexes)) > 1:
+                # if len(set(x.split('_')[0] for x in selection_indexes)) > 2:
 
-                    st.session_state[f'bundle_parameter_value_{counter}'] = None # necessário forçar None aqui, para limpar o placeholder
+                #     st.session_state[f'bundle_parameter_value_{counter}'] = None # necessário forçar None aqui, para limpar o placeholder
+                #     parameter_value = ''
                     
-                    popup('Mixing values from different categories (e.g., exams with medications) is not allowed.')
+                #     popup('Mixing values from different categories (e.g., exams with medications) is not allowed.')
 
-                    st.session_state[f'bundle_dialog_state_{counter}'] = 0
+                #     st.session_state[f'bundle_dialog_state_{counter}'] = 0
 
-                else:
+                # else:
 
-                    st.session_state['warning_dialog_state'] = 0
+                #     st.session_state['warning_dialog_state'] = 0
 
-                    parameter_value = [str(x).title() for x in parameter_value]
+                #     parameter_value = [str(x).title() for x in parameter_value]
 
-                    parameter_value = '[linebreak]'.join(parameter_value)
+                #     parameter_value = '[linebreak]'.join(parameter_value)
+
+
+                parameter_value = [str(x).title() for x in parameter_value]
+
+                parameter_value = '[linebreak]'.join(parameter_value)
 
 
                 st.text_input("Parameter value:", disabled=True, value=None, 
-                              placeholder=parameter_value.replace('[linebreak]', ', '), key=f"parameter_value_{counter}")          
+                              placeholder=parameter_value.replace('[linebreak]', ', ').replace('"', '').replace("'", ""),
+                              key=f"parameter_value_{counter}")
 
 
             else:
@@ -272,7 +279,7 @@ if len(input_data) > 2:
 ###### JSON DATA #######
 ########################
 
-# Exibe os valores selecionados (opcional)
+# Exibe os valores selecionados (para checagem apenas)
 
 # st.write("Valores Selecionados:")
 # st.json(input_data)

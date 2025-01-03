@@ -24,13 +24,20 @@ class DataLoader:
 
             data = dict()
 
+        #     if os.path.exists(PERSISTENCE_FILEPATH):
+
+        #         with open(PERSISTENCE_FILEPATH, 'rb') as f:
+
+        #             data = pickle.load(f)
+            
+        #     else:
+
+        #         data = dict()
+
 
         bundles_data_formated = list()
 
-        # for i in range(len(data.keys())):
         for context_key in data.keys():
-
-            # print('context_key:', context_key)
 
             bundle_data = {
                 'label': context_key.strip().title(),
@@ -44,7 +51,7 @@ class DataLoader:
             for k,v in data[context_key].items():
 
                 children = {
-                    'label': k.strip().title(),
+                    'label': k.strip().upper().title(),
                     'value': f'bundle_{index}', # unlerline obrigatorio
                     'children': list()
                 }
@@ -52,9 +59,14 @@ class DataLoader:
                 index_list[f'bundle_{index}'] = k.strip().lower()
                 index +=1
 
-                for i,item in enumerate(v.split('[LINEBREAK]')):
+                for i,item in enumerate(v.upper().split('[LINEBREAK]')):
 
-                    children['children'].append({'label':item, 'value':f'item_{index}'})
+                    children['children'].append(
+                        {
+                            'label':item.replace('"', '').replace("'", ""), 
+                            'value':f'item_{index}' # unlerline obrigatorio
+                        }
+                    )
 
                     index_list[f'item_{index}'] = item.strip().lower()
                     index +=1

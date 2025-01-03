@@ -2,9 +2,12 @@ import os
 import copy
 import pickle
 import datetime as dt
-from dotenv import load_dotenv
-from awss3 import AwsS3 as aws
 import pandas as pd
+
+from io import BytesIO
+from dotenv import load_dotenv
+
+from awss3 import AwsS3 as aws
 from parameters import *
 
 load_dotenv()
@@ -15,12 +18,30 @@ class Bundles:
     def __init__(self):
 
         self.excel_filepath = None
-        self.bundles = dict()
+        # self.bundles = dict()
+        self.bundles = self.__set_bundles()
         self.__bucket = self.__set_bucket()
         self.__filename = self.__set_filename()
         self.__filename_backup = self.__set_filename_backup()
         self.__parameters = None
         self.__default_context = self.__set_default_context()
+
+
+    def __set_bundles(self):
+
+        # if os.path.exists(PERSISTENCE_BUNDLE_FILEPATH):
+
+        #     with open(PERSISTENCE_BUNDLE_FILEPATH, 'rb') as f:
+
+        #         bundles = pickle.load(f)
+
+        # else:
+
+        #     bundles = dict()
+
+        # return bundles
+
+        return dict()
 
 
     def __set_bucket(self):
@@ -45,26 +66,12 @@ class Bundles:
 
     def __get_parameter_names(self):
 
-        print('PARTE I')
-
         if self.excel_filepath is None:
-
-            print('PARTE J')
-
 
             return None
 
-        # if 'FileStorage'.lower() not in str(type(self.excel_filepath)).lower() and\
-        #     not os.path.exists(self.excel_filepath):
-
-        #     raise FileNotFoundError(f'File {self.excel_filepath} not found.')
-
-        print('PARTE K')
-
 
         xl = pd.ExcelFile(self.excel_filepath)
-
-        print('PARTE L')
 
         sheet_name = [x for x in xl.sheet_names if x.strip().upper() == 'BUNDLES']
 
@@ -72,23 +79,15 @@ class Bundles:
 
             raise Exception('It is mandatory a (unique) sheet named "BUNDLES". See documentation.')
 
-        print('PARTE N')
-
         sheet_bundles = pd.read_excel(xl, sheet_name[0])
-        # sheet_bundles = xl.parse(sheet_name[0])
-        # sheet_bundles = pd.read_excel(self.excel_filepath, sheet_name='BUNDLES')
-
-        print('PARTE O')
 
         sheet_bundles.columns = [x.strip().upper() for x in sheet_bundles.columns]
 
-        print('PARTE P')
-
         parameter_names = sheet_bundles['PARAMETER'].to_list()
 
-        print('PARTE Q')
 
         return [x.strip().lower() for x in parameter_names]
+
 
 
     def get_bundles_list(self):
@@ -174,14 +173,17 @@ class Bundles:
 
             self.export_to_s3()
 
+        # else:
+
+        #     with open(PERSISTENCE_BUNDLE_FILEPATH, 'wb') as f:
+
+        #         pickle.dump(self.bundles, f)
+
 
     def __append_bundle(self, context:str, bundle:dict, **kwargs):
 
         context = str(context).strip().lower()
         offline = kwargs.get('offline')
-
-        print('#### offline:', offline)
-
 
         if (not isinstance(offline, bool)) and (offline is not None):
 
@@ -203,13 +205,15 @@ class Bundles:
             self.bundles[context].update(bundle)
 
 
-        if offline is False or offline is None:
+        if (offline is False) or (offline is None):
 
             self.export_to_s3()
 
-        else:
+        # else:
 
-            ## implementar salvamento local aqui (para o caso de offline=True)
+        #     with open(PERSISTENCE_BUNDLE_FILEPATH, 'wb') as f:
+
+        #         pickle.dump(self.bundles, f)
 
 
     def delete(self, context:str, name:str, **kwargs):
@@ -354,10 +358,6 @@ class Bundles:
 
     def export_to_s3(self):
 
-        # TODO: salvar modificações do dia no diretório local. No
-        # fim do dia (e.g., meia noite), rodar um processo que faz o
-        # update no S3.
-
         if self.s3_file_exists():
 
             if self.s3_backup_exists():
@@ -383,8 +383,9 @@ class Bundles:
 
             bundles_from_backup = aws.load_from_s3(self.__bucket, self.__filename)
 
-            self.bundles.update(bundles_from_backup)
-        
+            # self.bundles.update(bundles_from_backup)
+            self.bundles = bundles_from_backup
+
         else:
 
             return None
@@ -392,25 +393,7 @@ class Bundles:
 
     def _load_from_excel(self, excel_filepath:str = None, **kwargs):
 
-        print('PARTE D')
-
-        # if 'FileStorage'.lower() in str(type(excel_filepath)).lower():
-
-        #     self.excel_filepath = excel_filepath
-
-        # else:
-
-        #     if (excel_filepath is None) or (not os.path.exists(excel_filepath)):
-
-        #         raise FileNotFoundError(f'File {self.excel_filepath} not found.')
-            
-        #     else:
-
-        #         self.excel_filepath = excel_filepath
-
         if excel_filepath is None:
-
-            print('PARTE E')
 
             raise ValueError('The parameter "excel_filepath" is mandatory.')
         
@@ -422,22 +405,12 @@ class Bundles:
         offline = kwargs.get('offline')
         offline = None if offline is None else offline
 
-        print('PARTE F')
-
-
         if not isinstance(offline, bool) and offline is not None:
-
-            print('PARTE G')
-
 
             raise TypeError('The parameter "offline" must be a Python bool (i.e., either True or False).')
 
 
-        print('PARTE H')
-
         self.__parameters = self.__get_parameter_names()
-
-        print('PASSOU PRA BAIXO AGORA')
 
         xl = pd.ExcelFile(self.excel_filepath)
 
@@ -447,27 +420,15 @@ class Bundles:
 
         for sheet_name in sheet_names:
 
-            print('sheet_name:', sheet_name)
-
             df = pd.read_excel(xl, sheet_name)
-
-            print('sheet_name ABAIXO')
 
             column_names = [x.strip().lower() for x in df.columns]
 
-            print('DENTRO LOOP 1')
-
             df.columns = column_names
-
-            print('DENTRO LOOP 2')
 
             for column_name in column_names:
 
-                print('column_name:', column_name)
-
                 if column_name in self.__parameters:
-
-                    print('DENTRO LOOP 3:', column_name)
 
                     values = df[column_name].dropna().to_list().copy()
                     values = [str(x).replace(';', SEMICOLON).replace('\n', INNERLINEBREAK).strip().lower() 
@@ -484,50 +445,32 @@ class Bundles:
                         output.update(bundle_parsed)  # TODO: implementar verificação de nomes duplicados
 
 
-        print('DEPOIS DO LOOP')
-
         sheet_name_for_context_parameter = [x for x in xl.sheet_names if 'TREE' in x.strip().upper()]
 
         if len(sheet_name_for_context_parameter) != 1:
-
-            print('INCOSISTENCIA AQUI')
 
             raise Exception('Inconsistency found in sheet names: a (unique) sheet named "TREE" is mandatory.')
         
         else:
 
-            print('FORA DA INCOSISTENCIA AQUI')
-
             sheet_name_for_context_parameter = sheet_name_for_context_parameter[0]
-
-        print('SEGUIU ABAIXO DEPOIS')
 
         sheet_tree_config = pd.read_excel(xl, sheet_name_for_context_parameter)
         sheet_tree_config.columns = [x.strip().lower() for x in sheet_tree_config]
         context = sheet_tree_config['context'].dropna().to_list()
 
-        print('FINAL PARTE A')
-
 
         if len(context) > 1:
-
-            print('FINAL PARTE B')
 
             raise Exception('Only one value for the parameter "context" is allowed.')
         
         elif len(context) == 0:
 
-            print('FINAL PARTE C')
-
             context = None
         
         else:
-        
-            print('FINAL PARTE D')
 
             context = str(context[0]).strip().lower()
-
-        print('FINAL PARTE E')
 
         context = None if context is None else (None if context == 'none' else context)
 

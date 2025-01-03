@@ -11,7 +11,7 @@ from dss import *
 from decisiontree import *
 from node import *
 from bundles import *
-
+from awss3 import AwsS3 as s3
 
 app = Flask(__name__)
 CORS(app)
@@ -568,28 +568,81 @@ def delete_bundle():
         return response
 
 
-@app.route('/treeuploader', methods=['GET', 'POST'])
-def uploader():
+# @app.route('/treeuploader', methods=['GET', 'POST'])
+# def uploader():
 
-    if request.method == 'POST':
+#     if request.method == 'POST':
 
-        # bundles
-        bds._load_from_excel(
-            excel_filepath = request.files.get('file') # input_value
-        )
+#         # bundles
+#         bds._load_from_excel(
+#             excel_filepath = request.files.get('file') # input_value
+#         )
 
-        # # decision tree
-        # dss._build_tree_from_excel(
-        #     context = None,
-        #     excel_filepath = request.files.get('file'), # input_value,
-        #     bundles = bds,
-        #     # offline = False,
-        #     force = False
-        # )
+#         # # decision tree
+#         # dss._build_tree_from_excel(
+#         #     context = None,
+#         #     excel_filepath = request.files.get('file'), # input_value,
+#         #     bundles = bds,
+#         #     # offline = False,
+#         #     force = False
+#         # )
 
-        return render_template('done.html')
+#         return render_template('done.html')
     
-    return render_template('uploader.html')
+#     return render_template('uploader.html')
+
+
+@app.route('/bundle-uploader', methods=['POST'])
+def bundle_uploader():
+
+    offline =  "true" if s3.check_s3_availability() is False else "false"
+
+    print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ## Bundle Uploader ##")
+    print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] User inputs:")
+    print('\trequest method:', request.method)
+    print('\trequest is json:', request.is_json)
+    print('\toffline:', offline)
+
+
+    if offline not in [None, 'true', 'false']:
+
+        raise TypeError('The parameter "offline" must be either True or False.')
+    
+    else:
+
+        if offline == 'true':
+
+            offline = True
+        
+        else:
+
+            offline = False
+
+
+    print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] Uploading Bundle file...")
+
+    file = request.files['file']
+
+    if file.filename == '':
+        response = {"message": "No file selected."}
+        response = make_response(response)
+        response.status = 400
+
+        return response
+
+    file = BytesIO(file.read())
+    bds._load_from_excel(
+        excel_filepath = file, # input_value
+        offline = offline
+    )
+
+    print(f"[API STATUS - {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%s')}] ...done.")
+
+    response = {"message": "Done."}
+    response = make_response(response)
+    response.status = 200
+
+    return response
 
 
 @app.route('/refresh', methods=['GET'])

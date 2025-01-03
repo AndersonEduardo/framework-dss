@@ -7,15 +7,29 @@ from awss3 import AwsS3 as s3
 
 from parameters import *
 
-bundles_data_formated = dataloader.load_data()
+
+def load_bundle_data():
+
+    try:
+
+        bundles_data_formated = dataloader.load_data()
+
+        return bundles_data_formated
+
+    except Exception as e:
+
+        print('ERROR:', e)
+        st.error(f"**Erro ao carregar os dados:** {e}")
 
 
 @st.dialog("Selecione os valores na lista", width='large')
 def bundle_modal(row:int):
 
+    bundles_data_formated = load_bundle_data()
+
     return_select = tree_select(bundles_data_formated['bundles_data_formated'])
 
-    st.write(return_select)
+    # st.write(return_select) # para checagens
 
     if st.button("Close"):
         
